@@ -14,6 +14,7 @@ from omnigent.server.auth import LEVEL_OWNER
 from omnigent.server.feature_flags import Feature
 from omnigent.server.schemas import SessionFamily
 from omnigent.server.session_orchestration import require_owned_session
+from omnigent.server.sharing_settings import SiblingSessionDestinations
 from omnigent.stores.conversation_store import (
     SIDE_CHAT_LABEL_KEY,
     SIDE_CHAT_SOURCE_LABEL_KEY,
@@ -35,6 +36,7 @@ def authorize_sibling_source(
     *,
     parent_id: str | None,
     host_id: str | None,
+    host_type: str,
 ) -> Conversation:
     if not request.app.state.feature_flags.enabled(Feature.SIBLING_SESSIONS):
         raise OmnigentError("Nested agents are disabled", code=ErrorCode.FORBIDDEN)
@@ -53,6 +55,31 @@ def authorize_sibling_source(
             conversations,
             permissions,
             private=True,
+        )
+    destinations = SiblingSessionDestinations.coerce(
+        getattr(
+            request.app.state,
+            "sibling_session_destinations",
+            lambda: SiblingSessionDestinations.ANY_HOST,
+        )()
+    )
+    if host_type == "managed":
+        if destinations is SiblingSessionDestinations.CURRENT_HOST:
+            raise OmnigentError(
+                "Add Agent is limited to the current host by server policy",
+                code=ErrorCode.FORBIDDEN,
+            )
+    elif destinations is not SiblingSessionDestinations.ANY_HOST and (
+        host_id is None or host_id != source.host_id
+    ):
+        allowed = (
+            "the current host"
+            if destinations is SiblingSessionDestinations.CURRENT_HOST
+            else "the current host or a new managed sandbox"
+        )
+        raise OmnigentError(
+            f"Add Agent is limited to {allowed} by server policy",
+            code=ErrorCode.FORBIDDEN,
         )
     if host_id is not None:
         host_store = getattr(request.app.state, "host_store", None)

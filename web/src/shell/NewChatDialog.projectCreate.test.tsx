@@ -785,3 +785,87 @@ describe("NewChatLandingScreen nested agent creation", () => {
     },
   );
 });
+
+describe("NewChatLandingScreen Add Agent destinations", () => {
+  it.each([
+    ["current_host", false, false],
+    ["current_host_or_new_sandbox", false, true],
+    ["any_host", true, true],
+  ] as const)(
+    "%s controls connected-host and new-sandbox choices",
+    async (policy, showsOtherHost, showsSandbox) => {
+      searchParams = new URLSearchParams("sibling=source");
+      vi.mocked(useHosts).mockReturnValue({
+        data: [host(), host({ host_id: "host_2", name: "build-server" })],
+      } as ReturnType<typeof useHosts>);
+      renderLanding({
+        sibling_sessions: true,
+        sibling_session_destinations: policy,
+        managed_sandboxes_enabled: true,
+        sandbox_provider: "modal",
+      });
+
+      await screen.findByRole("heading", { name: "Add an agent" });
+      fireEvent.pointerDown(screen.getByTestId("new-chat-landing-host-chip"), { button: 0 });
+      expect(screen.getByTestId("new-chat-landing-host-host_1")).toBeInTheDocument();
+      expect(screen.queryByTestId("new-chat-landing-host-host_2") !== null).toBe(showsOtherHost);
+      expect(screen.queryByTestId("new-chat-landing-sandbox-option") !== null).toBe(showsSandbox);
+      expect(screen.queryByTestId("new-chat-landing-connect-host") !== null).toBe(showsOtherHost);
+    },
+  );
+
+  it("binds an uploaded agent to its chosen host during sibling creation", async () => {
+    searchParams = new URLSearchParams("sibling=source");
+    vi.mocked(createBundledSession).mockResolvedValue({ id: "conv_new", agentId: "ag_pending" });
+    renderLanding({ sibling_sessions: true, sibling_session_destinations: "any_host" });
+    await screen.findByRole("heading", { name: "Add an agent" });
+
+    fireEvent.click(screen.getByTestId("test-create-pending"));
+    fireEvent.change(screen.getByTestId("new-chat-landing-input"), {
+      target: { value: "Review the API" },
+    });
+    fireEvent.click(screen.getByTestId("new-chat-landing-submit"));
+    await waitFor(() => expect(createBundledSession).toHaveBeenCalled());
+
+    const [, metadata] = vi.mocked(createBundledSession).mock.calls[0];
+    expect(metadata).toEqual(
+      expect.objectContaining({
+        sibling_source_id: "source",
+        host_id: "host_1",
+        workspace: REPO,
+      }),
+    );
+    expect(launchRunner).not.toHaveBeenCalled();
+  });
+
+  it("provisions an uploaded sibling agent in a selected new sandbox", async () => {
+    searchParams = new URLSearchParams("sibling=source");
+    renderLanding({
+      sibling_sessions: true,
+      sibling_session_destinations: "current_host_or_new_sandbox",
+      managed_sandboxes_enabled: true,
+      sandbox_provider: "modal",
+    });
+    await screen.findByRole("heading", { name: "Add an agent" });
+
+    fireEvent.pointerDown(screen.getByTestId("new-chat-landing-host-chip"), { button: 0 });
+    fireEvent.click(screen.getByTestId("new-chat-landing-sandbox-option"));
+    fireEvent.click(screen.getByTestId("test-create-pending"));
+    fireEvent.change(screen.getByTestId("new-chat-landing-input"), {
+      target: { value: "Review the API" },
+    });
+    fireEvent.click(screen.getByTestId("new-chat-landing-submit"));
+    await waitFor(() => expect(createBundledSession).toHaveBeenCalled());
+
+    const [, metadata] = vi.mocked(createBundledSession).mock.calls[0];
+    expect(metadata).toEqual(
+      expect.objectContaining({
+        sibling_source_id: "source",
+        host_type: "managed",
+        workspaces: [],
+      }),
+    );
+    expect(metadata).not.toHaveProperty("host_id");
+    expect(launchRunner).not.toHaveBeenCalled();
+  });
+});
