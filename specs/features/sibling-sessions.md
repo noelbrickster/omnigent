@@ -68,7 +68,7 @@ Additional requirements:
 - Automatic session cleanup must retain compute while any session is bound,
   including stopped/archived sessions, unrelated forks and admitted launches.
   Cleanup must not revoke a replacement generation's credentials.
-- Admins choose where **Add Agent** may run: only the clicked session's host;
+- Admins choose where **Add nested agent** may run: only the clicked session's host;
   that host or a fresh managed sandbox; or any available host (the default).
   The UI uses these plain labels and does not expose family/sibling terminology.
 

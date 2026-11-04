@@ -79,7 +79,7 @@ MCP independent creation.
   A read-only share of the sender keeps both tools working; an edit share
   refuses them.
 - As an admin, open Settings → Policies and change **Add Agent destinations**.
-  Open **Add Agent** from a session and inspect its host picker, then try the
+  Open **Add nested agent** from a session and inspect its host picker, then try the
   same disallowed destination through the API or MCP.
 - Open an independent worker in Chat or Terminal and follow its "Created by"
   link. On mobile web, the same link is in the header. Ask the manager to list

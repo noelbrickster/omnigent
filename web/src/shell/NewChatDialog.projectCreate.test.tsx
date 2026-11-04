@@ -805,7 +805,7 @@ describe("NewChatLandingScreen Add Agent destinations", () => {
         sandbox_provider: "modal",
       });
 
-      await screen.findByRole("heading", { name: "Add an agent" });
+      await screen.findByRole("heading", { name: "Add nested agent" });
       fireEvent.pointerDown(screen.getByTestId("new-chat-landing-host-chip"), { button: 0 });
       expect(screen.getByTestId("new-chat-landing-host-host_1")).toBeInTheDocument();
       expect(screen.queryByTestId("new-chat-landing-host-host_2") !== null).toBe(showsOtherHost);
@@ -818,7 +818,7 @@ describe("NewChatLandingScreen Add Agent destinations", () => {
     searchParams = new URLSearchParams("sibling=source");
     vi.mocked(createBundledSession).mockResolvedValue({ id: "conv_new", agentId: "ag_pending" });
     renderLanding({ sibling_sessions: true, sibling_session_destinations: "any_host" });
-    await screen.findByRole("heading", { name: "Add an agent" });
+    await screen.findByRole("heading", { name: "Add nested agent" });
 
     fireEvent.click(screen.getByTestId("test-create-pending"));
     fireEvent.change(screen.getByTestId("new-chat-landing-input"), {
@@ -846,7 +846,7 @@ describe("NewChatLandingScreen Add Agent destinations", () => {
       managed_sandboxes_enabled: true,
       sandbox_provider: "modal",
     });
-    await screen.findByRole("heading", { name: "Add an agent" });
+    await screen.findByRole("heading", { name: "Add nested agent" });
 
     fireEvent.pointerDown(screen.getByTestId("new-chat-landing-host-chip"), { button: 0 });
     fireEvent.click(screen.getByTestId("new-chat-landing-sandbox-option"));
