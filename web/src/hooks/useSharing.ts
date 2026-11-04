@@ -1,5 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { SharingMode, SiblingSessionDestinations } from "@/lib/capabilities";
+import {
+  parseSiblingSessionDestinations,
+  type SharingMode,
+  type SiblingSessionDestinations,
+} from "@/lib/capabilities";
 import { authenticatedFetch } from "@/lib/identity";
 
 /** Server-wide sharing settings from ``GET /v1/sharing`` (admin). */
@@ -44,6 +48,22 @@ export interface SharingUpdate {
 
 const QUERY_KEY = ["sharing"];
 const PUBLIC_MAX_LEVEL_QUERY_KEY = ["sharing", "public-max-level"];
+
+const DESTINATIONS_QUERY_KEY = ["sharing", "sibling-destinations"];
+
+export function useSiblingSessionDestinations(enabled: boolean) {
+  return useQuery({
+    queryKey: DESTINATIONS_QUERY_KEY,
+    enabled,
+    staleTime: 0,
+    queryFn: async (): Promise<SiblingSessionDestinations> => {
+      const response = await authenticatedFetch("/v1/info");
+      if (!response.ok) throw new Error("Could not load agent destinations");
+      const info = await response.json();
+      return parseSiblingSessionDestinations(info.sibling_session_destinations);
+    },
+  });
+}
 
 export function usePublicSharingMaxLevel(enabled: boolean) {
   return useQuery({
@@ -96,6 +116,7 @@ export function useSetSharing() {
     onSuccess: (data) => {
       // Reflect the new value immediately, then revalidate.
       queryClient.setQueryData(QUERY_KEY, data);
+      queryClient.setQueryData(DESTINATIONS_QUERY_KEY, data.sibling_session_destinations);
       queryClient.setQueryData(PUBLIC_MAX_LEVEL_QUERY_KEY, data.public_sharing_max_level ?? "read");
       void queryClient.invalidateQueries({ queryKey: QUERY_KEY });
     },

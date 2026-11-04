@@ -1669,24 +1669,29 @@ async def test_siblings_are_private_roots_and_owner_only_in_lists(
 
 
 @pytest.mark.parametrize(
-    "policy,target,allowed",
+    "policy,target,allowed,transport",
     [
-        ("current_host", "current", True),
-        ("current_host", "other", False),
-        ("current_host", "managed", False),
-        ("current_host", "unbound", False),
-        ("current_host_or_new_sandbox", "current", True),
-        ("current_host_or_new_sandbox", "other", False),
-        ("current_host_or_new_sandbox", "managed", True),
-        ("current_host_or_new_sandbox", "unbound", False),
-        ("any_host", "current", True),
-        ("any_host", "other", True),
-        ("any_host", "managed", True),
-        ("any_host", "unbound", True),
+        (policy, target, allowed, transport)
+        for policy, target, allowed in [
+            ("current_host", "current", True),
+            ("current_host", "other", False),
+            ("current_host", "managed", False),
+            ("current_host", "unbound", False),
+            ("current_host_or_new_sandbox", "current", True),
+            ("current_host_or_new_sandbox", "other", False),
+            ("current_host_or_new_sandbox", "managed", True),
+            ("current_host_or_new_sandbox", "unbound", False),
+            ("any_host", "current", True),
+            ("any_host", "other", True),
+            ("any_host", "managed", True),
+            ("any_host", "unbound", True),
+        ]
+        for transport in ("json", "bundled", "orchestrated")
+        if transport != "orchestrated" or target in {"current", "managed"}
     ],
 )
 async def test_sibling_destination_policy_is_enforced_before_creation(
-    auth_client, auth_app, peers, db_uri, monkeypatch, policy, target, allowed
+    auth_client, auth_app, peers, db_uri, monkeypatch, policy, target, allowed, transport
 ):
     from omnigent.host.frames import HostLaunchRunnerFrame, HostStatFrame, decode_host_frame
     from omnigent.server.routes.sessions import routes_core
@@ -1702,7 +1707,10 @@ async def test_sibling_destination_policy_is_enforced_before_creation(
     store.set_host_id(source["id"], source_host, workspace="/source")
     auth_app.state.sibling_session_destinations = lambda: SiblingSessionDestinations(policy)
 
+    traffic = []
+
     def answer_host(connection, payload):
+        traffic.append(payload)
         frame = decode_host_frame(payload)
         if isinstance(frame, HostStatFrame):
             connection.pending_stats[frame.request_id].set_result(
@@ -1716,7 +1724,7 @@ async def test_sibling_destination_policy_is_enforced_before_creation(
     monkeypatch.setattr(auth_app.state.host_registry, "send_text", answer_host)
 
     async def finish_managed_launch(**kwargs):
-        return None
+        traffic.append(kwargs)
 
     monkeypatch.setattr(routes_core, "_run_managed_launch", finish_managed_launch)
     body = {"agent_id": source["agent_id"], "sibling_source_id": source["id"]}
@@ -1731,12 +1739,39 @@ async def test_sibling_destination_policy_is_enforced_before_creation(
         body["host_type"] = "managed"
 
     before = {session.id for session in store.list_conversations().data}
-    response = await auth_client.post("/v1/sessions", json=body)
+    if transport == "bundled":
+        from tests.server.integration.test_sessions_permissions import build_agent_bundle
+
+        body.pop("agent_id")
+        response = await auth_client.post(
+            "/v1/sessions",
+            data={"metadata": json.dumps(body)},
+            files={
+                "bundle": (
+                    "agent.tar.gz",
+                    build_agent_bundle(name="policy-worker"),
+                    "application/gzip",
+                )
+            },
+        )
+    elif transport == "orchestrated":
+        from omnigent.runner.identity import ORCHESTRATION_SOURCE_HEADER
+
+        response = await auth_client.post(
+            "/v1/sessions/orchestrated",
+            json=body,
+            headers={
+                ORCHESTRATION_SOURCE_HEADER: source["id"],
+            },
+        )
+    else:
+        response = await auth_client.post("/v1/sessions", json=body)
     assert response.status_code == (201 if allowed else 403), response.text
     created = {session.id for session in store.list_conversations().data} - before
     assert len(created) == int(allowed)
     if not allowed:
         assert "server policy" in response.text
+        assert traffic == []
 
 
 async def test_family_project_removal_precedes_archive(auth_client, peers, db_uri):

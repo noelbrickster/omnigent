@@ -192,8 +192,10 @@ async def _create_git_session(
     client: httpx.AsyncClient,
     agent_id: str,
     git: dict[str, Any],
+    *,
+    bundled: bool = False,
 ) -> httpx.Response:
-    """POST a JSON session-create with a ``git`` block.
+    """POST a JSON or bundled session-create with a ``git`` block.
 
     :param client: The test HTTP client.
     :param agent_id: Agent to bind.
@@ -201,15 +203,22 @@ async def _create_git_session(
         ``{"branch_name": "feature/x", "base_branch": "main"}``.
     :returns: The raw create response.
     """
-    return await client.post(
-        "/v1/sessions",
-        json={
-            "agent_id": agent_id,
-            "host_id": _HOST_ID,
-            "workspace": _SOURCE_REPO,
-            "git": git,
-        },
-    )
+    metadata = {"host_id": _HOST_ID, "workspace": _SOURCE_REPO, "git": git}
+    if bundled:
+        response = await client.post(
+            "/v1/sessions",
+            data={"metadata": json.dumps(metadata)},
+            files={
+                "bundle": (
+                    "agent.tar.gz",
+                    build_agent_bundle("worktree-worker"),
+                    "application/gzip",
+                )
+            },
+        )
+        assert response.status_code == 201, response.text
+        return response
+    return await client.post("/v1/sessions", json={"agent_id": agent_id, **metadata})
 
 
 async def test_create_passes_branch_and_base_branch_to_host(
@@ -428,10 +437,12 @@ async def test_create_with_invalid_existing_worktree_branch_fails_400(
     assert "id" not in body
 
 
+@pytest.mark.parametrize("bundled", [False, True])
 async def test_create_failure_never_removes_existing_worktree(
     register_worktree_host: RegisterHost,
     client: httpx.AsyncClient,
     monkeypatch: pytest.MonkeyPatch,
+    bundled: bool,
 ) -> None:
     """A create_conversation failure must NOT destroy the user's worktree.
 
@@ -458,20 +469,21 @@ async def test_create_failure_never_removes_existing_worktree(
     def _boom(*args: Any, **kwargs: Any) -> Any:
         raise RuntimeError("simulated create_conversation failure")
 
-    monkeypatch.setattr(SqlAlchemyConversationStore, "create_conversation", _boom)
+    monkeypatch.setattr(
+        SqlAlchemyConversationStore,
+        "create_conversation",
+        _boom,
+    )
 
     # The in-process ASGI transport re-raises unhandled server errors, so
     # the simulated failure surfaces here rather than as a 500 response.
     # Either way the create failed; what matters is the side effect below.
     with pytest.raises(RuntimeError, match="simulated create_conversation failure"):
-        await client.post(
-            "/v1/sessions",
-            json={
-                "agent_id": agent["id"],
-                "host_id": _HOST_ID,
-                "workspace": _SOURCE_REPO,
-                "git": {"branch_name": "feature/existing", "existing_worktree": True},
-            },
+        await _create_git_session(
+            client,
+            agent["id"],
+            {"branch_name": "feature/existing", "existing_worktree": True},
+            bundled=bundled,
         )
 
     # Critically, the user's worktree is left untouched: the create-rollback
@@ -481,10 +493,12 @@ async def test_create_failure_never_removes_existing_worktree(
     )
 
 
+@pytest.mark.parametrize("bundled", [False, True])
 async def test_create_failure_rolls_back_omnigent_created_worktree(
     register_worktree_host: RegisterHost,
     client: httpx.AsyncClient,
     monkeypatch: pytest.MonkeyPatch,
+    bundled: bool,
 ) -> None:
     """A create_conversation failure DOES clean up an Omnigent-made worktree.
 
@@ -504,10 +518,16 @@ async def test_create_failure_rolls_back_omnigent_created_worktree(
     def _boom(*args: Any, **kwargs: Any) -> Any:
         raise RuntimeError("simulated create_conversation failure")
 
-    monkeypatch.setattr(SqlAlchemyConversationStore, "create_conversation", _boom)
+    monkeypatch.setattr(
+        SqlAlchemyConversationStore,
+        "create_conversation",
+        _boom,
+    )
 
     with pytest.raises(RuntimeError, match="simulated create_conversation failure"):
-        await _create_git_session(client, agent["id"], {"branch_name": "feature/orphan"})
+        await _create_git_session(
+            client, agent["id"], {"branch_name": "feature/orphan"}, bundled=bundled
+        )
 
     # Omnigent created the worktree, so the rollback force-removed it: one
     # remove frame for the worktree it just made, deleting the branch too.
@@ -517,10 +537,12 @@ async def test_create_failure_rolls_back_omnigent_created_worktree(
     assert cap.remove[0].delete_branch is True
 
 
+@pytest.mark.parametrize("bundled", [False, True])
 async def test_create_failure_rollback_preserves_existing_branch(
     register_worktree_host: RegisterHost,
     client: httpx.AsyncClient,
     monkeypatch: pytest.MonkeyPatch,
+    bundled: bool,
 ) -> None:
     """Create-rollback of an ``existing_branch`` recreate keeps the branch.
 
@@ -539,13 +561,18 @@ async def test_create_failure_rollback_preserves_existing_branch(
     def _boom(*args: Any, **kwargs: Any) -> Any:
         raise RuntimeError("simulated create_conversation failure")
 
-    monkeypatch.setattr(SqlAlchemyConversationStore, "create_conversation", _boom)
+    monkeypatch.setattr(
+        SqlAlchemyConversationStore,
+        "create_conversation",
+        _boom,
+    )
 
     with pytest.raises(RuntimeError, match="simulated create_conversation failure"):
         await _create_git_session(
             client,
             agent["id"],
             {"branch_name": "feature/kept", "existing_branch": True},
+            bundled=bundled,
         )
 
     assert len(cap.create) == 1, cap.create

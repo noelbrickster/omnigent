@@ -112,6 +112,11 @@ beforeEach(() => {
     data: {
       sibling_session_destinations: "any_host",
       sibling_session_destinations_editable: true,
+      sibling_session_destinations_options: [
+        "any_host",
+        "current_host_or_new_sandbox",
+        "current_host",
+      ],
     },
     refetch: refetchSharingMock,
   } as never);
@@ -158,9 +163,47 @@ describe("PoliciesPage list", () => {
     );
   });
 
+  it("disables deployment-managed destinations", async () => {
+    const state = vi.mocked(sharing.useSharing)().data!;
+    vi.mocked(sharing.useSharing).mockReturnValue({
+      data: { ...state, sibling_session_destinations_editable: false },
+      refetch: refetchSharingMock,
+    } as never);
+    renderPage();
+    expect(
+      await screen.findByRole("combobox", { name: "Nested agent destinations" }),
+    ).toBeDisabled();
+    expect(setSharingMutate).not.toHaveBeenCalled();
+  });
+
+  it("shows a sharing-load failure", async () => {
+    vi.mocked(sharing.useSharing).mockReturnValue({
+      error: new Error("Settings unavailable"),
+      refetch: refetchSharingMock,
+    } as never);
+    renderPage();
+    expect(await screen.findByRole("alert")).toHaveTextContent("Settings unavailable");
+  });
+
+  it("offers only advertised choices and displays save errors", async () => {
+    const state = vi.mocked(sharing.useSharing)().data!;
+    vi.mocked(sharing.useSharing).mockReturnValue({
+      data: { ...state, sibling_session_destinations_options: ["current_host"] },
+      refetch: refetchSharingMock,
+    } as never);
+    setSharingMutate.mockImplementation((_value, callbacks) =>
+      callbacks.onError(new Error("Save failed")),
+    );
+    renderPage();
+    fireEvent.click(await screen.findByRole("combobox", { name: "Nested agent destinations" }));
+    expect(screen.getAllByRole("option")).toHaveLength(1);
+    fireEvent.click(screen.getByRole("option", { name: /Current host only/ }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Save failed");
+  });
+
   it("updates where Add Agent may run without exposing sibling terminology", async () => {
     renderPage();
-    const trigger = await screen.findByRole("combobox", { name: "Add Agent destinations" });
+    const trigger = await screen.findByRole("combobox", { name: "Nested agent destinations" });
     expect(trigger).toHaveTextContent("Any available host");
     expect(screen.queryByText(/sibling/i)).not.toBeInTheDocument();
 

@@ -39,7 +39,7 @@ MCP independent creation.
   sibling stays in its creator's project; a different requested project or an
   unavailable source project is rejected before creation. Project defaults do
   not override the worker's agent or placement.
-- `destinations`: Settings → Policies → **Add Agent destinations** limits new
+- `destinations`: Settings → Policies → **Nested agent destinations** limits new
   agents to the current host, the current host or a fresh managed sandbox, or
   any available host. The server enforces the same choice for the composer,
   uploaded custom agents, direct API calls and MCP. Any available host is the
@@ -78,7 +78,7 @@ MCP independent creation.
 - Use the existing Share dialog to share the sender or receiver, then repeat.
   A read-only share of the sender keeps both tools working; an edit share
   refuses them.
-- As an admin, open Settings → Policies and change **Add Agent destinations**.
+- As an admin, open Settings → Policies and change **Nested agent destinations**.
   Open **Add nested agent** from a session and inspect its host picker, then try the
   same disallowed destination through the API or MCP.
 - Open an independent worker in Chat or Terminal and follow its "Created by"

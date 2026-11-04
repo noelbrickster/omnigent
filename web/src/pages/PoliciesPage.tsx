@@ -471,7 +471,11 @@ export function PoliciesPage() {
   const [pendingAction, setPendingAction] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [destinationError, setDestinationError] = useState<string | null>(null);
-  const { data: sharing, refetch: refetchSharing } = useSharing({
+  const {
+    data: sharing,
+    error: sharingError,
+    refetch: refetchSharing,
+  } = useSharing({
     enabled: isSingleUser || meIsAdmin === true,
   });
   const setSharing = useSetSharing();
@@ -566,7 +570,7 @@ export function PoliciesPage() {
       </div>
 
       {sharing && (
-        <SettingsGroup title="Add Agent destinations" testId="settings-group-agent-destinations">
+        <SettingsGroup title="Nested agent destinations" testId="settings-group-agent-destinations">
           <div className="flex flex-col gap-3 md:flex-row-reverse md:items-start md:gap-6">
             <Select
               value={destinations}
@@ -577,17 +581,20 @@ export function PoliciesPage() {
             >
               <SelectTrigger
                 className="w-full shrink-0 md:w-64"
-                aria-label="Add Agent destinations"
+                aria-label="Nested agent destinations"
                 aria-describedby="agent-destinations-description"
               >
-                <SelectValue>{destination?.label}</SelectValue>
+                <SelectValue>{destination?.label ?? destinations}</SelectValue>
               </SelectTrigger>
               <SelectContent
                 position="popper"
                 align="end"
                 className="w-[30rem] max-w-[calc(100vw-2rem)]"
               >
-                {AGENT_DESTINATIONS.map((option) => (
+                {AGENT_DESTINATIONS.filter(
+                  (option) =>
+                    sharing.sibling_session_destinations_options?.includes(option.id) ?? true,
+                ).map((option) => (
                   <SelectItem key={option.id} value={option.id} textValue={option.label}>
                     <span className="flex flex-col gap-1">
                       <span className="font-medium">{option.label}</span>
@@ -608,12 +615,12 @@ export function PoliciesPage() {
           </div>
         </SettingsGroup>
       )}
-      {destinationError && (
+      {(destinationError || sharingError) && (
         <div
           role="alert"
           className="mt-3 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-ui text-destructive"
         >
-          {destinationError}
+          {destinationError ?? sharingError?.message}
         </div>
       )}
 

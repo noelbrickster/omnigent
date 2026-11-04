@@ -1138,3 +1138,8 @@ async def test_read_only_grantee_cannot_edit_other_labels(db_uri: str, tmp_path:
             json={"labels": {"omnigent.pinned": "1721760000000", "omni_project": "Moonshot"}},
         )
         assert resp.status_code == 403, resp.text
+
+
+@pytest.mark.parametrize("value", [None, "", "typo", 7])
+def test_sibling_destinations_coerce_fails_closed(value) -> None:
+    assert SiblingSessionDestinations.coerce(value) is SiblingSessionDestinations.CURRENT_HOST

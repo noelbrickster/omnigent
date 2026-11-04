@@ -812,14 +812,17 @@ export async function createBundledSession(
     project_id?: string;
     sibling_source_id?: string;
     labels?: Record<string, string>;
+    initial_input?: SessionEventInput;
     terminal_launch_args?: string[];
     git?: { branch_name: string; base_branch?: string; existing_worktree?: boolean } | null;
     mcp_registry_services?: string[];
   } = {},
+  initialFiles: File[] = [],
 ): Promise<{ id: string; agentId?: string }> {
   const form = new FormData();
   form.append("metadata", JSON.stringify(metadata));
   form.append("bundle", bundle);
+  for (const file of initialFiles) form.append("initial_files", file, file.name);
   const res = await authenticatedFetch("/v1/sessions", {
     method: "POST",
     headers: {
