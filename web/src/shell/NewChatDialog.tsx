@@ -2698,7 +2698,9 @@ function NewChatLandingContent({
     if (!siblingSourceId || !siblingSource || info === "loading") return;
     if (
       (siblingDestinationPolicy === "current_host" && sandboxSelected) ||
-      (siblingDestinationPolicy !== "any_host" && selectedHostId !== siblingSource.hostId)
+      (siblingDestinationPolicy !== "any_host" &&
+        !sandboxSelected &&
+        selectedHostId !== siblingSource.hostId)
     ) {
       if (siblingDestinationPolicy === "current_host") setSandboxSelected(false);
       setSelectedHostId(siblingSource.hostId ?? null);
@@ -6076,6 +6078,7 @@ function NewChatLandingContent({
         const metadata: Parameters<typeof createBundledSession>[1] = { labels: createLabels };
         if (siblingSourceId) metadata.sibling_source_id = siblingSourceId;
         if (sandboxSelected) {
+          // Multipart creates allocate their host server-side; they cannot reserve a host ID.
           metadata.host_type = "managed";
           metadata.workspaces = composeSandboxWorkspaces(sandboxRepoSelections);
           if (sandboxProvider !== null) metadata.sandbox_provider = sandboxProvider;
@@ -6113,6 +6116,15 @@ function NewChatLandingContent({
         if (createProjectId !== null) {
           // Atomic filing: the server sets first-class `project_id` at create.
           metadata.project_id = createProjectId;
+          if (
+            !siblingSourceId &&
+            !sandboxSelected &&
+            info !== "loading" &&
+            info.session_bundle_workspaces === true
+          ) {
+            // Ordinary bundles apply worktree options in the subsequent runner launch.
+            metadata.git = null;
+          }
         } else if (selectedProject) {
           // Born-filed: stamp the project's `omni_project` label so a bundled
           // session groups under its project from its first sidebar appearance,
@@ -7477,18 +7489,18 @@ function NewChatLandingContent({
                           )}
                           {siblingMayUseOtherHosts && (
                             <>
-                          <DropdownMenuSeparator />
-                          {/* Persistent escape hatch: open the connect-a-host
+                              <DropdownMenuSeparator />
+                              {/* Persistent escape hatch: open the connect-a-host
                     instructions. Present even with zero hosts so a fresh user
                     is never stuck. */}
-                          <DropdownMenuItem
-                            onSelect={() => setConnectOpen(true)}
-                            data-testid="new-chat-landing-connect-host"
-                            className="mobile-touch-target composer-host-connect text-muted-foreground"
-                          >
-                            <PlusIcon className="size-4" />
-                            Connect new host
-                          </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onSelect={() => setConnectOpen(true)}
+                                data-testid="new-chat-landing-connect-host"
+                                className="mobile-touch-target composer-host-connect text-muted-foreground"
+                              >
+                                <PlusIcon className="size-4" />
+                                Connect new host
+                              </DropdownMenuItem>
                             </>
                           )}
                         </DropdownMenuContent>

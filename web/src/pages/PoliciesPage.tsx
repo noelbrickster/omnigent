@@ -461,6 +461,7 @@ export function PoliciesPage() {
   // admin probe. A multi-user header-auth deploy (same accounts_enabled:false
   // / login_url:null shape) is NOT single-user and keeps its admin gate.
   const isSingleUser = isSingleUserMode(info);
+  const nestedAgentsEnabled = info !== "loading" && info.sibling_sessions === true;
   const [meIsAdmin, setMeIsAdmin] = useState<boolean | null>(null);
   const { data: policies = [], refetch } = useDefaultPolicies();
   const { data: registry = [] } = usePolicyRegistry();
@@ -476,7 +477,7 @@ export function PoliciesPage() {
     error: sharingError,
     refetch: refetchSharing,
   } = useSharing({
-    enabled: isSingleUser || meIsAdmin === true,
+    enabled: nestedAgentsEnabled && (isSingleUser || meIsAdmin === true),
   });
   const setSharing = useSetSharing();
 
@@ -484,8 +485,8 @@ export function PoliciesPage() {
 
   const refresh = useCallback(() => {
     void refetch();
-    void refetchSharing();
-  }, [refetch, refetchSharing]);
+    if (nestedAgentsEnabled) void refetchSharing();
+  }, [refetch, refetchSharing, nestedAgentsEnabled]);
 
   // Admin probe via the mode-agnostic `/v1/me` identity (works under OIDC
   // too, unlike the accounts-only `/auth/me`). Skipped in single-user mode
@@ -569,7 +570,7 @@ export function PoliciesPage() {
         </Button>
       </div>
 
-      {sharing && (
+      {nestedAgentsEnabled && sharing && (
         <SettingsGroup title="Nested agent destinations" testId="settings-group-agent-destinations">
           <div className="flex flex-col gap-3 md:flex-row-reverse md:items-start md:gap-6">
             <Select
@@ -615,7 +616,7 @@ export function PoliciesPage() {
           </div>
         </SettingsGroup>
       )}
-      {(destinationError || sharingError) && (
+      {nestedAgentsEnabled && (destinationError || sharingError) && (
         <div
           role="alert"
           className="mt-3 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-ui text-destructive"

@@ -16,14 +16,13 @@ redeploy:
   ``<data_dir>/default_public_sessions`` (``off`` / ``sandbox`` / ``all``).
 - peer messaging: ``<data_dir>/peer_session_messaging`` (``on`` / ``off``,
   default on), limited by the deployment's orchestration and messaging flags.
-- where **Add Agent** may run → ``<data_dir>/sibling_session_destinations``
+- where **Add nested agent** may run → ``<data_dir>/sibling_session_destinations``
   (``current_host`` / ``current_host_or_new_sandbox`` / ``any_host``).
 
-A missing, empty, or unreadable file means "no override recorded", so the caller
-falls back to the env-var default. Unrecognized sharing values are likewise ignored;
-an unrecognized Add Agent destination fails closed to the current host. Reads are mtime-cached
-per file so the per-request hot path is cheap, mirroring the ``admins`` roster
-loader.
+Missing sharing overrides fall back to the env-var default, as do empty,
+unreadable, or unrecognized sharing values. Nested agent destinations use the
+default only for an absent file; invalid or unreadable overrides restrict
+creation to the current host. Reads are mtime-cached per file.
 """
 
 from __future__ import annotations
@@ -162,7 +161,7 @@ class DefaultPublicSessions(str, Enum):
 
 
 class SiblingSessionDestinations(str, Enum):
-    """Hosts an Add Agent create may target."""
+    """Hosts a nested agent may target."""
 
     CURRENT_HOST = "current_host"
     CURRENT_HOST_OR_NEW_SANDBOX = "current_host_or_new_sandbox"
@@ -345,8 +344,16 @@ def write_default_public_sessions_override(policy: DefaultPublicSessions) -> Non
 
 
 def read_sibling_session_destinations_override() -> SiblingSessionDestinations | None:
-    raw = _read_override_text(resolve_data_dir() / _SIBLING_SESSION_DESTINATIONS_FILE)
-    if not raw:
+    try:
+        raw = _read_override_text(
+            resolve_data_dir() / _SIBLING_SESSION_DESTINATIONS_FILE, raise_errors=True
+        )
+    except (OSError, UnicodeError):
+        logger.warning(
+            "Could not read nested agent destinations; using current_host", exc_info=True
+        )
+        return SiblingSessionDestinations.CURRENT_HOST
+    if raw is None:
         return None
     try:
         return SiblingSessionDestinations(raw.lower())

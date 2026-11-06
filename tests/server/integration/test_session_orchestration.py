@@ -1757,6 +1757,9 @@ async def test_sibling_destination_policy_is_enforced_before_creation(
     elif transport == "orchestrated":
         from omnigent.runner.identity import ORCHESTRATION_SOURCE_HEADER
 
+        # Runners identify the source through the header; the server derives placement.
+        for key in ("sibling_source_id", "host_id", "workspace"):
+            body.pop(key, None)
         response = await auth_client.post(
             "/v1/sessions/orchestrated",
             json=body,

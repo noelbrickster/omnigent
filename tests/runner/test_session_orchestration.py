@@ -264,7 +264,7 @@ async def test_managed_creation_respects_current_host_policy_before_posting():
             )
         )
 
-    assert "only allows Add Agent on the current host" in result["error"]
+    assert "only allows Add nested agent on the current host" in result["error"]
     assert [(request.method, request.url.path) for request in requests] == [("GET", "/v1/info")]
 
 
@@ -724,9 +724,12 @@ async def test_independent_creation_supports_disabled_or_missing_sibling_capabil
     def handle(request):
         paths.append(request.url.path)
         if request.url.path == "/v1/info":
-            return httpx.Response(
-                200, json={} if capability is None else {"sibling_sessions": capability}
-            )
+            info = {"sibling_session_destinations": "current_host"}
+            if capability is not None:
+                info["sibling_sessions"] = capability
+            if capability is True:
+                info["sibling_session_destinations"] = "any_host"
+            return httpx.Response(200, json=info)
         assert request.url.path == "/v1/sessions/orchestrated"
         assert request.headers[ORCHESTRATION_SOURCE_HEADER] == "manager"
         assert "parent_session_id" not in json.loads(request.content)

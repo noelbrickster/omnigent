@@ -21,6 +21,7 @@ const serverInfoMocks = vi.hoisted(() => ({
   loginUrl: null as string | null,
   serverVersion: "0.3.0.dev0" as string | null,
   singleUser: false,
+  siblingSessions: true,
 }));
 
 vi.mock("@/lib/CapabilitiesContext", () => ({
@@ -29,6 +30,7 @@ vi.mock("@/lib/CapabilitiesContext", () => ({
     login_url: serverInfoMocks.loginUrl,
     server_version: serverInfoMocks.serverVersion,
     single_user: serverInfoMocks.singleUser,
+    sibling_sessions: serverInfoMocks.siblingSessions,
   }),
 }));
 
@@ -97,6 +99,7 @@ beforeEach(() => {
   serverInfoMocks.loginUrl = null;
   serverInfoMocks.serverVersion = "0.3.0.dev0";
   serverInfoMocks.singleUser = false;
+  serverInfoMocks.siblingSessions = true;
   vi.mocked(identity.resolveIdentity).mockResolvedValue("admin");
   vi.mocked(identity.getCurrentIsAdmin).mockReturnValue(true);
   setPolicies([]);
@@ -129,6 +132,14 @@ afterEach(() => {
 });
 
 describe("PoliciesPage gating", () => {
+  it("hides nested agent settings when the feature is disabled", async () => {
+    serverInfoMocks.siblingSessions = false;
+    renderPage();
+    await screen.findByText(/No global policies configured/);
+    expect(screen.queryByRole("combobox", { name: "Nested agent destinations" })).toBeNull();
+    expect(sharing.useSharing).toHaveBeenLastCalledWith({ enabled: false });
+  });
+
   it("shows a loading state until the identity probe resolves", () => {
     vi.mocked(identity.resolveIdentity).mockReturnValue(new Promise(() => {}));
     renderPage();

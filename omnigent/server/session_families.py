@@ -66,7 +66,7 @@ def authorize_sibling_source(
     if host_type == "managed":
         if destinations is SiblingSessionDestinations.CURRENT_HOST:
             raise OmnigentError(
-                "Add Agent is limited to the current host by server policy",
+                "Add nested agent is limited to the current host by server policy",
                 code=ErrorCode.FORBIDDEN,
             )
     elif destinations is not SiblingSessionDestinations.ANY_HOST and (
@@ -78,7 +78,7 @@ def authorize_sibling_source(
             else "the current host or a new managed sandbox"
         )
         raise OmnigentError(
-            f"Add Agent is limited to {allowed} by server policy",
+            f"Add nested agent is limited to {allowed} by server policy",
             code=ErrorCode.FORBIDDEN,
         )
     if host_id is not None:

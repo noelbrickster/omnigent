@@ -45,7 +45,7 @@ import { createBundledSession, getSessionSlim, launchRunner } from "@/lib/sessio
 import { CapabilitiesProvider } from "@/lib/CapabilitiesContext";
 import type { ServerInfo } from "@/lib/capabilities";
 import type { Host } from "@/hooks/useHosts";
-import { useHosts } from "@/hooks/useHosts";
+import { useHosts, useHostModelOptions } from "@/hooks/useHosts";
 import type { AvailableAgent } from "@/hooks/useAvailableAgents";
 import { useAvailableAgents } from "@/hooks/useAvailableAgents";
 import type { ProjectConfig } from "@/lib/projectsApi";
@@ -304,20 +304,29 @@ function selectAgent(agentId: string): void {
 async function submitAndReadBody(
   response: Record<string, unknown> = { id: "conv_new" },
 ): Promise<Record<string, unknown>> {
-  vi.mocked(authenticatedFetch).mockResolvedValueOnce({
-    ok: true,
-    json: () => Promise.resolve(response),
-  } as Response);
+  const fetch = vi.mocked(authenticatedFetch).getMockImplementation()!;
+  vi.mocked(authenticatedFetch).mockImplementation((url, options) =>
+    url === "/v1/sessions" && options?.method === "POST"
+      ? Promise.resolve(Response.json(response))
+      : fetch(url, options),
+  );
   fireEvent.change(screen.getByTestId("new-chat-landing-input"), {
     target: { value: "hello" },
   });
   fireEvent.click(screen.getByTestId("new-chat-landing-submit"));
-  await waitFor(() => expect(vi.mocked(authenticatedFetch)).toHaveBeenCalled());
+  await waitFor(() =>
+    expect(authenticatedFetch).toHaveBeenCalledWith(
+      "/v1/sessions",
+      expect.objectContaining({ method: "POST" }),
+    ),
+  );
   // Let the post-create bookkeeping (move / invalidations / navigation) run
   // before reading the body, so move-call assertions can't race the submit.
   await waitFor(() => expect(navigateMock).toHaveBeenCalled());
-  const [, init] = vi.mocked(authenticatedFetch).mock.calls[0] as [string, RequestInit];
-  return JSON.parse(init.body as string) as Record<string, unknown>;
+  const [, init] = vi
+    .mocked(authenticatedFetch)
+    .mock.calls.find(([url, options]) => url === "/v1/sessions" && options?.method === "POST")!;
+  return JSON.parse(init!.body as string) as Record<string, unknown>;
 }
 
 beforeEach(() => {
@@ -592,44 +601,50 @@ describe("NewChatLandingScreen project-aware create (first-class project_id)", (
     });
   });
 
-  it("carries project_id and the omission rules through the multipart (bundled) path", async () => {
-    const config = { host_id: "host_1", workspace: REPO, agent_id: "ag_other" };
-    setProjectConfig(config);
-    vi.mocked(createBundledSession).mockResolvedValue({ id: "conv_new", agentId: "ag_pending" });
-    renderLanding();
-    await waitFor(() =>
-      expect(screen.getByTestId("new-chat-landing-workspace-chip").textContent).toContain("alpha"),
-    );
-    // Commit a pending custom agent (via the stubbed dialog), then submit.
-    fireEvent.click(screen.getByTestId("test-create-pending"));
-    fireEvent.change(screen.getByTestId("new-chat-landing-input"), {
-      target: { value: "hello" },
-    });
-    fireEvent.click(screen.getByTestId("new-chat-landing-submit"));
-    await waitFor(() => expect(vi.mocked(createBundledSession)).toHaveBeenCalled());
-    await waitFor(() => expect(navigateMock).toHaveBeenCalled());
+  it.each([false, true])(
+    "carries project defaults through multipart (workspace support=%s)",
+    async (workspaces) => {
+      const config = { host_id: "host_1", workspace: REPO, agent_id: "ag_other" };
+      setProjectConfig(config);
+      vi.mocked(createBundledSession).mockResolvedValue({ id: "conv_new", agentId: "ag_pending" });
+      renderLanding({ session_bundle_workspaces: workspaces });
+      await waitFor(() =>
+        expect(screen.getByTestId("new-chat-landing-workspace-chip").textContent).toContain(
+          "alpha",
+        ),
+      );
+      // Commit a pending custom agent (via the stubbed dialog), then submit.
+      fireEvent.click(screen.getByTestId("test-create-pending"));
+      fireEvent.change(screen.getByTestId("new-chat-landing-input"), {
+        target: { value: "hello" },
+      });
+      fireEvent.click(screen.getByTestId("new-chat-landing-submit"));
+      await waitFor(() => expect(vi.mocked(createBundledSession)).toHaveBeenCalled());
+      await waitFor(() => expect(navigateMock).toHaveBeenCalled());
 
-    // Atomic filing rides in the metadata part; the config-seeded workspace
-    // is omitted from the launch fields but preserved in composer context.
-    const [, metadata] = vi.mocked(createBundledSession).mock.calls[0];
-    expect(metadata).toEqual({
-      project_id: "proj_alpha",
-      labels: composerContextToLabels({
-        workingDirectory: { kind: "selected", path: REPO },
-        worktree: { kind: "none" },
-      }),
-    });
-    // The runner still launches with the explicit client-side workspace.
-    expect(vi.mocked(launchRunner)).toHaveBeenCalledWith("host_1", "conv_new", REPO, undefined);
-    expect(vi.mocked(moveConversationToProject)).not.toHaveBeenCalled();
-    // The session-scoped agent the create registered is the start's agent.
-    expect(readProjectLaunchDefaults("proj_alpha", config)).toEqual({
-      agentId: "ag_pending",
-      pickedHarness: null,
-      hostId: "host_1",
-      workspace: REPO,
-    });
-  });
+      // Atomic filing rides in the metadata part; the config-seeded workspace
+      // is omitted from the launch fields but preserved in composer context.
+      const [, metadata] = vi.mocked(createBundledSession).mock.calls[0];
+      expect(metadata).toEqual({
+        project_id: "proj_alpha",
+        ...(workspaces ? { git: null } : {}),
+        labels: composerContextToLabels({
+          workingDirectory: { kind: "selected", path: REPO },
+          worktree: { kind: "none" },
+        }),
+      });
+      // The runner still launches with the explicit client-side workspace.
+      expect(vi.mocked(launchRunner)).toHaveBeenCalledWith("host_1", "conv_new", REPO, undefined);
+      expect(vi.mocked(moveConversationToProject)).not.toHaveBeenCalled();
+      // The session-scoped agent the create registered is the start's agent.
+      expect(readProjectLaunchDefaults("proj_alpha", config)).toEqual({
+        agentId: "ag_pending",
+        pickedHarness: null,
+        hostId: "host_1",
+        workspace: REPO,
+      });
+    },
+  );
 });
 
 describe("NewChatLandingScreen nested agent creation", () => {
@@ -965,6 +980,7 @@ describe("NewChatLandingScreen Add Agent destinations", () => {
 
       fireEvent.pointerDown(screen.getByTestId("new-chat-landing-host-chip"), { button: 0 });
       fireEvent.click(screen.getByTestId("new-chat-landing-sandbox-option"));
+      await waitFor(() => expect(vi.mocked(useHostModelOptions).mock.lastCall?.[0]).toBeNull());
       fireEvent.click(screen.getByTestId("test-create-pending"));
       fireEvent.change(screen.getByTestId("new-chat-landing-input"), {
         target: { value: "Review the API" },

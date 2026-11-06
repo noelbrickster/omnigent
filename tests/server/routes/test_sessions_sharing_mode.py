@@ -860,6 +860,30 @@ def test_sibling_destination_override_is_live_and_defaults_to_any_host(
     )
 
 
+@pytest.mark.parametrize("operation", ["stat", "read_text"])
+def test_unreadable_sibling_destination_override_stays_restricted(
+    tmp_path, monkeypatch, operation
+):
+    monkeypatch.setattr(sharing_settings, "resolve_data_dir", lambda: tmp_path)
+    write_sibling_session_destinations_override(SiblingSessionDestinations.CURRENT_HOST)
+
+    def unreadable(*args, **kwargs):
+        raise PermissionError("policy unavailable")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(Path, operation, unreadable)
+        assert (
+            read_sibling_session_destinations_override() is SiblingSessionDestinations.CURRENT_HOST
+        )
+
+
+@pytest.mark.parametrize("contents", [b"", b"typo", b"\xff"])
+def test_invalid_sibling_destination_file_stays_restricted(tmp_path, monkeypatch, contents):
+    monkeypatch.setattr(sharing_settings, "resolve_data_dir", lambda: tmp_path)
+    (tmp_path / "sibling_session_destinations").write_bytes(contents)
+    assert read_sibling_session_destinations_override() is SiblingSessionDestinations.CURRENT_HOST
+
+
 async def test_admin_updates_sibling_destinations_and_info_live(
     db_uri: str, tmp_path: Path
 ) -> None:
