@@ -22,6 +22,7 @@ import logging
 import secrets
 import time
 import weakref
+from dataclasses import replace
 from typing import Any, cast
 from urllib.parse import urlparse
 
@@ -1257,6 +1258,16 @@ def create_hosts_router(
                     expected_host_id=host_id,
                     expected_runner_id=runner_id,
                 )
+                if not restored and host_profile is None:
+                    # The runner can bind before the host write fails. Clear only
+                    # this attempt while retaining the previous host and workspace.
+                    with contextlib.suppress(ValueError):
+                        await asyncio.to_thread(
+                            conversation_store.clear_runner_id,
+                            body.session_id,
+                            expected_binding=replace(target.conv, runner_id=runner_id),
+                        )
+                        restored = True
                 if not restored:
                     await _rollback_worktree()
                     return

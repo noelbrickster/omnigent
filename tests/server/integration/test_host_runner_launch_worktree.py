@@ -40,8 +40,10 @@ from omnigent.host.frames import (
 from omnigent.runtime.agent_cache import AgentCache
 from omnigent.server.app import create_app
 from omnigent.server.auth import RESERVED_USER_LOCAL
+from omnigent.server.feature_flags import resolve_feature_flags
 from omnigent.server.host_registry import HostConnection
 from omnigent.server.routes import hosts as hosts_routes
+from omnigent.server.sharing_settings import SiblingSessionDestinations
 from omnigent.stores.agent_store.sqlalchemy_store import SqlAlchemyAgentStore
 from omnigent.stores.artifact_store.local import LocalArtifactStore
 from omnigent.stores.comment_store.sqlalchemy_store import SqlAlchemyCommentStore
@@ -85,6 +87,7 @@ def app(runtime_init: None, db_uri: str, tmp_path: Path) -> FastAPI:
         ),
         comment_store=SqlAlchemyCommentStore(db_uri),
         host_store=HostStore(db_uri),
+        feature_flags=resolve_feature_flags({"OMNIGENT_FEATURES": "sibling_sessions"}),
     )
 
 
@@ -399,11 +402,21 @@ async def test_concurrent_source_launch_cannot_overtake_worktree_launch(
     assert conv.git_branch == "feature/b"
 
 
+@pytest.mark.parametrize("binding_fails", [False, True])
+@pytest.mark.parametrize(
+    "nested,previous_host",
+    [(False, None), (True, None), (True, "09f9970096984b2692af29d0712ad4b3")],
+    ids=["ordinary", "nested-unbound", "nested-other-host"],
+)
 async def test_cancellation_waits_for_host_binding_before_rollback(
     register_host: RegisterHost,
     client: httpx.AsyncClient,
     db_uri: str,
     monkeypatch: pytest.MonkeyPatch,
+    app: FastAPI,
+    nested: bool,
+    previous_host: str | None,
+    binding_fails: bool,
 ) -> None:
     """Cancellation cannot race rollback against the host-binding write."""
     bind_started = threading.Event()
@@ -413,11 +426,23 @@ async def test_cancellation_waits_for_host_binding_before_rollback(
     def _delayed_set_host_id(*args: Any, **kwargs: Any) -> Any:
         bind_started.set()
         assert release_bind.wait(timeout=budget(2.0))
+        if binding_fails:
+            raise RuntimeError("host binding persistence failed")
         return original_set_host_id(*args, **kwargs)
 
-    monkeypatch.setattr(SqlAlchemyConversationStore, "set_host_id", _delayed_set_host_id)
     cap = register_host()
     session_id = await _bare_session(client, "wt-bind-cancel-agent")
+    store = SqlAlchemyConversationStore(db_uri)
+    if nested:
+        app.state.sibling_session_destinations = lambda: SiblingSessionDestinations.ANY_HOST
+        source = store.create_conversation(agent_id=None)
+        store.add_new_sibling(source.id, session_id, user_id=None)
+        if previous_host is not None:
+            HostStore(db_uri).upsert_on_connect(previous_host, "source", RESERVED_USER_LOCAL)
+            store.set_host_id(session_id, previous_host, workspace="/previous", git_branch="main")
+    previous = store.get_conversation(session_id)
+    assert previous is not None
+    monkeypatch.setattr(SqlAlchemyConversationStore, "set_host_id", _delayed_set_host_id)
 
     launch_task = asyncio.create_task(
         _launch(client, session_id, git={"branch_name": "feature/cancel"})
@@ -434,9 +459,14 @@ async def test_cancellation_waits_for_host_binding_before_rollback(
     conv = SqlAlchemyConversationStore(db_uri).get_conversation(session_id)
     assert conv is not None
     assert conv.runner_id is None
-    assert conv.host_id is None
-    assert conv.workspace is None
-    assert conv.git_branch is None
+    assert conv.host_id == previous.host_id
+    assert conv.workspace == previous.workspace
+    assert conv.git_branch == previous.git_branch
+    assert conv.labels == previous.labels
+
+    monkeypatch.setattr(SqlAlchemyConversationStore, "set_host_id", original_set_host_id)
+    retry = await _launch(client, session_id, git=None)
+    assert retry.status_code == 200, retry.text
 
 
 async def test_launch_runner_with_existing_worktree_persists_without_creating(
