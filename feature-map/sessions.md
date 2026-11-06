@@ -222,7 +222,7 @@ the header menu), and each place is a separate entry point.
   or header menu and choose **Add nested agent**. Mobile row/header menus offer
   the same action. On desktop, Cmd/Ctrl+Alt+A opens **Add nested agent** for the active
   session. Select a host in the composer and send the first message.
-  Server admins configure the available targets under Settings → Policies →
+  Server admins configure the available targets under Settings → Admin → General →
   **Add Agent destinations**.
 
 **Session grids (desktop only):** enable `OMNIGENT_FEATURES=grid_sessions_display_ui`, open a

@@ -116,7 +116,10 @@ export function useSetSharing() {
     onSuccess: (data) => {
       // Reflect the new value immediately, then revalidate.
       queryClient.setQueryData(QUERY_KEY, data);
-      queryClient.setQueryData(DESTINATIONS_QUERY_KEY, data.sibling_session_destinations);
+      queryClient.setQueryData(
+        DESTINATIONS_QUERY_KEY,
+        parseSiblingSessionDestinations(data.sibling_session_destinations),
+      );
       queryClient.setQueryData(PUBLIC_MAX_LEVEL_QUERY_KEY, data.public_sharing_max_level ?? "read");
       void queryClient.invalidateQueries({ queryKey: QUERY_KEY });
     },

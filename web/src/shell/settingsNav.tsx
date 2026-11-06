@@ -45,6 +45,7 @@ export type SettingsSectionId =
   | "shortcuts"
   | "import"
   | "account"
+  | "admin"
   | "members"
   | "policies"
   | "sharing"
@@ -63,6 +64,7 @@ const SECTION_IDS: readonly SettingsSectionId[] = [
   "shortcuts",
   "import",
   "account",
+  "admin",
   "members",
   "policies",
   "sharing",
@@ -101,6 +103,7 @@ export function settingsNavGroups(
   integrationsEnabled = false,
   customAgentsEnabled = false,
   mcpEnabled = false,
+  nestedAgentsEnabled = false,
 ): SettingsNavGroup[] {
   const harnesses: SettingsNavItem = {
     id: "harnesses",
@@ -161,6 +164,7 @@ export function settingsNavGroups(
     // so drop both from the nav there. Policies stays: global policies apply
     // to a solo user's own sessions too.
     const adminItems: SettingsNavItem[] = [];
+    if (nestedAgentsEnabled) adminItems.push({ id: "admin", label: "General", icon: SettingsIcon });
     if (!isSingleUser) adminItems.push({ id: "members", label: "Members", icon: UsersIcon });
     adminItems.push({ id: "policies", label: "Policies", icon: ShieldCheckIcon });
     if (!isSingleUser) adminItems.push({ id: "sharing", label: "Sharing", icon: Share2Icon });
@@ -203,6 +207,7 @@ export function useSettingsRoute(): {
   const isValidSection =
     (SECTION_IDS as readonly string[]).includes(next) &&
     !(singleUser && (next === "members" || next === "sharing")) &&
+    !(next === "admin" && (info === "loading" || info.sibling_sessions !== true)) &&
     !(next === "custom-agents" && !customAgentsSettingsEnabled(info));
   const section = isValidSection ? (next as SettingsSectionId) : defaultSection;
   const harness = section === "harnesses" ? segments[idx + 2] : undefined;
@@ -266,6 +271,7 @@ export function SettingsSidebarBody({
     integrationsEnabled,
     customAgentsSettingsEnabled(info),
     mcpEnabled,
+    info !== "loading" && info.sibling_sessions === true,
   );
 
   return (

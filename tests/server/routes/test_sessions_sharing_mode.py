@@ -865,7 +865,7 @@ def test_unreadable_sibling_destination_override_stays_restricted(
     tmp_path, monkeypatch, operation
 ):
     monkeypatch.setattr(sharing_settings, "resolve_data_dir", lambda: tmp_path)
-    write_sibling_session_destinations_override(SiblingSessionDestinations.CURRENT_HOST)
+    write_sibling_session_destinations_override(SiblingSessionDestinations.ANY_HOST)
 
     def unreadable(*args, **kwargs):
         raise PermissionError("policy unavailable")

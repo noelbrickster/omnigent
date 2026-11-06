@@ -14,14 +14,12 @@ import { PoliciesPage } from "./PoliciesPage";
 import * as identity from "@/lib/identity";
 import * as defaultPolicies from "@/hooks/useDefaultPolicies";
 import * as policies from "@/hooks/usePolicies";
-import * as sharing from "@/hooks/useSharing";
 
 const serverInfoMocks = vi.hoisted(() => ({
   accountsEnabled: true,
   loginUrl: null as string | null,
   serverVersion: "0.3.0.dev0" as string | null,
   singleUser: false,
-  siblingSessions: true,
 }));
 
 vi.mock("@/lib/CapabilitiesContext", () => ({
@@ -30,16 +28,13 @@ vi.mock("@/lib/CapabilitiesContext", () => ({
     login_url: serverInfoMocks.loginUrl,
     server_version: serverInfoMocks.serverVersion,
     single_user: serverInfoMocks.singleUser,
-    sibling_sessions: serverInfoMocks.siblingSessions,
   }),
 }));
 
 const addMutate = vi.fn();
 const updateMutate = vi.fn();
 const deleteMutate = vi.fn();
-const setSharingMutate = vi.fn();
 const refetchMock = vi.fn();
-const refetchSharingMock = vi.fn();
 
 vi.mock("@/lib/identity", () => ({
   resolveIdentity: vi.fn(),
@@ -52,7 +47,6 @@ vi.mock("@/hooks/useDefaultPolicies", () => ({
   useDeleteDefaultPolicy: vi.fn(),
 }));
 vi.mock("@/hooks/usePolicies", () => ({ usePolicyRegistry: vi.fn() }));
-vi.mock("@/hooks/useSharing", () => ({ useSharing: vi.fn(), useSetSharing: vi.fn() }));
 
 type Policy = ReturnType<typeof policy>;
 function policy(overrides: Partial<Record<string, unknown>> = {}) {
@@ -99,7 +93,6 @@ beforeEach(() => {
   serverInfoMocks.loginUrl = null;
   serverInfoMocks.serverVersion = "0.3.0.dev0";
   serverInfoMocks.singleUser = false;
-  serverInfoMocks.siblingSessions = true;
   vi.mocked(identity.resolveIdentity).mockResolvedValue("admin");
   vi.mocked(identity.getCurrentIsAdmin).mockReturnValue(true);
   setPolicies([]);
@@ -111,19 +104,6 @@ beforeEach(() => {
   vi.mocked(defaultPolicies.useDeleteDefaultPolicy).mockReturnValue(
     mutationStub(deleteMutate) as never,
   );
-  vi.mocked(sharing.useSharing).mockReturnValue({
-    data: {
-      sibling_session_destinations: "any_host",
-      sibling_session_destinations_editable: true,
-      sibling_session_destinations_options: [
-        "any_host",
-        "current_host_or_new_sandbox",
-        "current_host",
-      ],
-    },
-    refetch: refetchSharingMock,
-  } as never);
-  vi.mocked(sharing.useSetSharing).mockReturnValue(mutationStub(setSharingMutate) as never);
 });
 
 afterEach(() => {
@@ -132,14 +112,6 @@ afterEach(() => {
 });
 
 describe("PoliciesPage gating", () => {
-  it("hides nested agent settings when the feature is disabled", async () => {
-    serverInfoMocks.siblingSessions = false;
-    renderPage();
-    await screen.findByText(/No global policies configured/);
-    expect(screen.queryByRole("combobox", { name: "Nested agent destinations" })).toBeNull();
-    expect(sharing.useSharing).toHaveBeenLastCalledWith({ enabled: false });
-  });
-
   it("shows a loading state until the identity probe resolves", () => {
     vi.mocked(identity.resolveIdentity).mockReturnValue(new Promise(() => {}));
     renderPage();
@@ -169,62 +141,7 @@ describe("PoliciesPage list", () => {
   it("shows the empty state when no global policies are configured", async () => {
     renderPage();
     expect(await screen.findByText(/No global policies configured/)).toBeInTheDocument();
-    expect(screen.getByText(/Server-wide controls for where agents run/)).toHaveClass(
-      "max-md:hidden",
-    );
-  });
-
-  it("disables deployment-managed destinations", async () => {
-    const state = vi.mocked(sharing.useSharing)().data!;
-    vi.mocked(sharing.useSharing).mockReturnValue({
-      data: { ...state, sibling_session_destinations_editable: false },
-      refetch: refetchSharingMock,
-    } as never);
-    renderPage();
-    expect(
-      await screen.findByRole("combobox", { name: "Nested agent destinations" }),
-    ).toBeDisabled();
-    expect(setSharingMutate).not.toHaveBeenCalled();
-  });
-
-  it("shows a sharing-load failure", async () => {
-    vi.mocked(sharing.useSharing).mockReturnValue({
-      error: new Error("Settings unavailable"),
-      refetch: refetchSharingMock,
-    } as never);
-    renderPage();
-    expect(await screen.findByRole("alert")).toHaveTextContent("Settings unavailable");
-  });
-
-  it("offers only advertised choices and displays save errors", async () => {
-    const state = vi.mocked(sharing.useSharing)().data!;
-    vi.mocked(sharing.useSharing).mockReturnValue({
-      data: { ...state, sibling_session_destinations_options: ["current_host"] },
-      refetch: refetchSharingMock,
-    } as never);
-    setSharingMutate.mockImplementation((_value, callbacks) =>
-      callbacks.onError(new Error("Save failed")),
-    );
-    renderPage();
-    fireEvent.click(await screen.findByRole("combobox", { name: "Nested agent destinations" }));
-    expect(screen.getAllByRole("option")).toHaveLength(1);
-    fireEvent.click(screen.getByRole("option", { name: /Current host only/ }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("Save failed");
-  });
-
-  it("updates where Add Agent may run without exposing sibling terminology", async () => {
-    renderPage();
-    const trigger = await screen.findByRole("combobox", { name: "Nested agent destinations" });
-    expect(trigger).toHaveTextContent("Any available host");
-    expect(screen.queryByText(/sibling/i)).not.toBeInTheDocument();
-
-    fireEvent.click(trigger);
-    fireEvent.click(await screen.findByRole("option", { name: /Current host or new sandbox/ }));
-
-    expect(setSharingMutate).toHaveBeenCalledWith(
-      { sibling_session_destinations: "current_host_or_new_sandbox" },
-      expect.anything(),
-    );
+    expect(screen.getByText("Policies applied to all sessions.")).toHaveClass("max-md:hidden");
   });
 
   it("renders each policy with its handler, a Disabled badge, and parameters", async () => {

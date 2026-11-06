@@ -82,3 +82,26 @@ it("updates an already-mounted destination reader after an admin saves", async (
   await act(() => result.current.save.mutateAsync({ sibling_session_destinations: "any_host" }));
   await waitFor(() => expect(result.current.destinations.data).toBe("any_host"));
 });
+
+it.each([
+  ["current_host_or_new_sandbox", "current_host_or_new_sandbox"],
+  [undefined, "any_host"],
+  ["unknown", "current_host"],
+])("normalizes a saved %s destination before revalidation", async (value, expected) => {
+  fetchMock
+    .mockResolvedValueOnce(Response.json({ sibling_session_destinations: "any_host" }))
+    .mockResolvedValueOnce(Response.json({ sibling_session_destinations: value }))
+    .mockImplementation(() => new Promise(() => {}));
+  const { result } = renderHook(
+    () => ({
+      destinations: useSiblingSessionDestinations(true),
+      save: useSetSharing(),
+    }),
+    { wrapper: wrapper() },
+  );
+  await waitFor(() => expect(result.current.destinations.data).toBe("any_host"));
+  await act(() =>
+    result.current.save.mutateAsync({ sibling_session_destinations: "current_host" }),
+  );
+  await waitFor(() => expect(result.current.destinations.data).toBe(expected));
+});

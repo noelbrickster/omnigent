@@ -25,6 +25,7 @@ const mocks = vi.hoisted(() => ({
   customAgentsEnabled: false as boolean | undefined,
   agentInstall: false,
   enabledConnections: [] as string[],
+  nestedAgents: false,
 }));
 
 vi.mock("@/lib/CapabilitiesContext", () => ({
@@ -37,6 +38,7 @@ vi.mock("@/lib/CapabilitiesContext", () => ({
     },
     agent_install: mocks.agentInstall,
     enabled_connections: mocks.enabledConnections,
+    sibling_sessions: mocks.nestedAgents,
   }),
 }));
 // Admin gating is now mode-agnostic, sourced from `/v1/me` via useIsAdmin
@@ -73,6 +75,7 @@ beforeEach(() => {
   mocks.customAgentsEnabled = false;
   mocks.agentInstall = false;
   mocks.enabledConnections = [];
+  mocks.nestedAgents = false;
 });
 afterEach(cleanup);
 
@@ -175,6 +178,19 @@ describe("settingsNavGroups", () => {
 });
 
 describe("SettingsSidebarBody", () => {
+  it.each([
+    [true, true],
+    [true, false],
+    [false, true],
+  ])("gates Admin General by admin=%s and nested agents=%s", (isAdmin, enabled) => {
+    mocks.isAdmin = isAdmin;
+    mocks.nestedAgents = enabled;
+    renderBody();
+    const entry = screen.queryByTestId("settings-nav-admin");
+    expect(entry !== null).toBe(isAdmin && enabled);
+    if (entry) expect(entry).toHaveAttribute("href", "/settings/admin");
+  });
+
   it.each([
     { connections: [], mcp: false, integrations: false },
     { connections: ["mcp"], mcp: true, integrations: false },
@@ -358,6 +374,14 @@ describe("SettingsSidebarBody", () => {
 });
 
 describe("useSettingsRoute", () => {
+  it.each([false, true])("gates the admin general route on nesting=%s", (enabled) => {
+    mocks.nestedAgents = enabled;
+    expect(routeHook("/settings/admin")).toEqual({
+      inSettings: true,
+      section: enabled ? "admin" : "general",
+    });
+  });
+
   it("treats /settings/members and /settings/policies as in-settings sections on an accounts deploy", () => {
     // The core of the fix: Members / Policies now live UNDER /settings, so the
     // sidebar's `inSettings` gate stays true and the settings nav stays put —
