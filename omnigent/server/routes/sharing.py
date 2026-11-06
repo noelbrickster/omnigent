@@ -27,9 +27,9 @@ from omnigent.server.routes._auth_helpers import get_user_id
 from omnigent.server.sharing_settings import (
     DefaultPublicSessions,
     PublicSharingMaxLevel,
+    SiblingSessionDestinations,
     peer_session_messaging_available,
     peer_session_messaging_enabled,
-    SiblingSessionDestinations,
     write_default_public_sessions_override,
     write_peer_session_messaging_override,
     write_public_sharing_max_level_override,

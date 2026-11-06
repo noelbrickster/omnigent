@@ -1516,6 +1516,12 @@ def register_core_routes(
             resolve_project_session_create,
         )
 
+        if (
+            parsed_metadata.sibling_source_id is None
+            and "git" not in parsed_metadata.model_fields_set
+        ):
+            # Ordinary uploads choose worktrees in their separate runner launch.
+            parsed_metadata = parsed_metadata.model_copy(update={"git": None})
         project_resolution = await resolve_project_session_create(
             body=parsed_metadata,
             user_id=user_id,

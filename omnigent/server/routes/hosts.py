@@ -1116,6 +1116,16 @@ def create_hosts_router(
             sandbox_profiles=getattr(request.app.state, "sandbox_profiles", None),
         )
         conn = target.conn
+        if target.conv.family_id is not None and flags.enabled(Feature.SIBLING_SESSIONS):
+            from omnigent.server.session_families import require_sibling_destination
+
+            await asyncio.to_thread(
+                require_sibling_destination,
+                request,
+                target.conv.host_id,
+                host_id=host_id,
+                host_type="external",
+            )
         if agent_store is not None and agent_cache is not None:
             from omnigent.server.mcp_compatibility import require_session_registry_mcp_support
 
@@ -1213,6 +1223,21 @@ def create_hosts_router(
             if profile_catalog is not None
             else None
         )
+        if (
+            host_profile is None
+            and target.conv.family_id is not None
+            and flags.enabled(Feature.SIBLING_SESSIONS)
+        ):
+            # Retain the admitted host after failure so restricted sessions can retry.
+            profile_binding = ProfileHostBinding(
+                session_id=target.conv.id,
+                host_id=target.conv.host_id,
+                workspace=target.conv.workspace,
+                git_branch=target.conv.git_branch,
+                runner_id=target.conv.runner_id,
+                profile_snapshot=None,
+                profile_host_id=None,
+            )
 
         async def _rollback_failed_launch() -> None:
             """Clear state created by a failed runner launch."""
@@ -1225,18 +1250,17 @@ def create_hosts_router(
                     stage="runner_launch",
                 ),
             )
-            if host_profile is not None:
-                if profile_binding is not None:
-                    restored = await asyncio.to_thread(
-                        conversation_store.rollback_profiled_host,
-                        profile_binding,
-                        expected_host_id=host_id,
-                        expected_runner_id=runner_id,
-                    )
-                    if not restored:
-                        await _rollback_worktree()
-                        return
-            else:
+            if profile_binding is not None:
+                restored = await asyncio.to_thread(
+                    conversation_store.rollback_profiled_host,
+                    profile_binding,
+                    expected_host_id=host_id,
+                    expected_runner_id=runner_id,
+                )
+                if not restored:
+                    await _rollback_worktree()
+                    return
+            elif host_profile is None:
                 await asyncio.to_thread(conversation_store.clear_host_binding, body.session_id)
             try:
                 if worktree is not None or (body.git is not None and body.git.existing_worktree):

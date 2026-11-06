@@ -56,6 +56,25 @@ def authorize_sibling_source(
             permissions,
             private=True,
         )
+    require_sibling_destination(request, source.host_id, host_id=host_id, host_type=host_type)
+    if host_id is not None:
+        host_store = getattr(request.app.state, "host_store", None)
+        host = host_store.get_host(host_id) if host_store else None
+        if host is not None and host.sandbox_provider and source.host_id != host.host_id:
+            raise OmnigentError(
+                "Only the source session's sandbox can be reused", code=ErrorCode.FORBIDDEN
+            )
+    return source
+
+
+def require_sibling_destination(
+    request: Request,
+    source_host_id: str | None,
+    *,
+    host_id: str | None,
+    host_type: str,
+) -> None:
+    """Apply the same destination policy to creation and subsequent host launches."""
     destinations = SiblingSessionDestinations.coerce(
         getattr(
             request.app.state,
@@ -70,7 +89,7 @@ def authorize_sibling_source(
                 code=ErrorCode.FORBIDDEN,
             )
     elif destinations is not SiblingSessionDestinations.ANY_HOST and (
-        host_id is None or host_id != source.host_id
+        host_id is None or host_id != source_host_id
     ):
         allowed = (
             "the current host"
@@ -81,14 +100,6 @@ def authorize_sibling_source(
             f"Add nested agent is limited to {allowed} by server policy",
             code=ErrorCode.FORBIDDEN,
         )
-    if host_id is not None:
-        host_store = getattr(request.app.state, "host_store", None)
-        host = host_store.get_host(host_id) if host_store else None
-        if host is not None and host.sandbox_provider and source.host_id != host.host_id:
-            raise OmnigentError(
-                "Only the source session's sandbox can be reused", code=ErrorCode.FORBIDDEN
-            )
-    return source
 
 
 async def complete_sibling_creation(
